@@ -5,11 +5,6 @@
 cmake_minimum_required(VERSION 3.20.0)
 
 
-set(BOARD pico_plasma)
-set(DBOARD_FLASH_RUNNER jlink)
-set(CMAKE_BUILD_TYPE Debug)
-set(CMAKE_CXX_FLAGS_DEBUG "-O0")
-
 find_package(Zephyr REQUIRED HINTS ${ZEPHYR_BASE})
 project(dotstar)
 
