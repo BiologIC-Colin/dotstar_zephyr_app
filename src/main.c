@@ -1,68 +1,71 @@
 /*
- * Main - Using the APA102 RGB strings to make something cool for the kids.
+ * Copyright (c) 2017 Linaro Limited
+ * Copyright (c) 2018 Intel Corporation
+ * Copyright (c) 2024 TOKITA Hiroshi
+ *
+ * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/kernel.h>
-#include <zephyr/device.h>
-#include <zephyr/drivers/led_strip.h>
+#include <errno.h>
+#include <string.h>
 
-
-
-
+#define LOG_LEVEL 4
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(main, CONFIG_DOTSTAR_LOG_LEVEL);
-#define STRIP_NUM_LEDS 180
+LOG_MODULE_REGISTER(main);
 
-#define PULSE_LEDS 12 /* Width of the pulse */
-#define COLOR_INCREMENT 20 /* Controls the color change rate */
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/led_strip.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/sys/util.h>
 
-const struct device *dev;
-struct led_rgb strip_colors[STRIP_NUM_LEDS];
-
-void setup() {
-    dev = DEVICE_DT_GET(DT_NODELABEL(spistrip));
-    if (!device_is_ready(dev)) {
-        printk("LED strip device is not ready\n");
-        return;
-    }
-}
+#define STRIP_NODE        DT_NODELABEL(apa102)
 
 
-void loop(int *pulse_position) {
-    int i;
-    int pulse_start = *pulse_position;
-    int pulse_end = (*pulse_position + PULSE_LEDS) % STRIP_NUM_LEDS;
+#define STRIP_NUM_PIXELS	51
 
-    if (pulse_end < pulse_start)
-        pulse_start -= STRIP_NUM_LEDS;
+#define DELAY_TIME K_MSEC(100)
 
-    for (i = 0; i < STRIP_NUM_LEDS; i++) {
-        if (i >= pulse_start && i < pulse_end) {
-            strip_colors[i].r = 0;
-            strip_colors[i].g = 0;
-            strip_colors[i].b = 255;
-        } else {
-            strip_colors[i].r = 0;
-            strip_colors[i].g = 0;
-            strip_colors[i].b = 0;
-        }
-    }
+#define RGB(_r, _g, _b) { .r = (_r), .g = (_g), .b = (_b) }
 
-    led_strip_update_rgb(dev, strip_colors, STRIP_NUM_LEDS);
+static const struct led_rgb colors[] = {
+        RGB(0x0f, 0x00, 0x00), /* red */
+        RGB(0x00, 0x0f, 0x00), /* green */
+        RGB(0x00, 0x00, 0x0f), /* blue */
+};
 
-    (*pulse_position)++;
-    if (*pulse_position >= STRIP_NUM_LEDS)
-        *pulse_position = 0;
-}
+static struct led_rgb pixels[STRIP_NUM_PIXELS];
 
-void main(void)
+static const struct device *const strip = DEVICE_DT_GET(STRIP_NODE);
+
+int main(void)
 {
-    int pulse_position = 0;
+    size_t color = 0;
+    int rc;
 
-    setup();
-
-    while (1) {
-        loop(&pulse_position);
-        k_sleep(K_MSEC(500));
+    if (device_is_ready(strip)) {
+        LOG_INF("Found LED strip device %s", strip->name);
+    } else {
+        LOG_ERR("LED strip device %s is not ready", strip->name);
+        return 0;
     }
+
+    LOG_INF("Displaying pattern on strip");
+    while (1) {
+        for (size_t cursor = 0; cursor < ARRAY_SIZE(pixels); cursor++) {
+            memset(&pixels, 0x00, sizeof(pixels));
+            memcpy(&pixels[cursor], &colors[color], sizeof(struct led_rgb));
+
+            rc = led_strip_update_rgb(strip, pixels, STRIP_NUM_PIXELS);
+            if (rc) {
+                LOG_ERR("couldn't update strip: %d", rc);
+            }
+
+            k_sleep(DELAY_TIME);
+        }
+
+        color = (color + 1) % ARRAY_SIZE(colors);
+    }
+
+    return 0;
 }

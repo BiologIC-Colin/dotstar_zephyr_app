@@ -1,0 +1,39 @@
+/ {
+	chosen {
+		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+	};
+};
+
+
+&uart1{
+	current-speed = <115200>;
+	status = "okay";
+	pinctrl-0 = <&uart1_default>;
+	pinctrl-names = "default";
+};
+
+&pinctrl {
+	uart1_default: uart1_default {
+		group1 {
+			pinmux = <UART1_TX_P20>;
+		};
+		group2 {
+			pinmux = <UART1_RX_P21>;
+			input-enable;
+		};
+	};
+};
+
+spistrip: &spi1 {
+	clock-frequency = <DT_FREQ_M(8)>;
+	status = "okay";
+	pinctrl-0 = <&spi1_default>;
+	pinctrl-names = "default";
+
+	apa102: apa102@1 {
+		compatible = "apa,apa102";
+		reg = <1>;
+		spi-max-frequency = <5250000>;
+	};
+};
