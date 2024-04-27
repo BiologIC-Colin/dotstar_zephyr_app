@@ -16,6 +16,8 @@ LOG_MODULE_REGISTER(main);
 #include <zephyr/drivers/led_strip.h>
 #include <zephyr/device.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/shell/shell.h>
+#include <stdlib.h>
 
 
 #define STRIP_NODE        DT_NODELABEL(apa102)
@@ -99,4 +101,23 @@ int main(void)
 }
 
 
+/* Shell commands */
+static int cmd_white_dimmer(const struct shell *shell, size_t argc, char **argv)
+{
+    if (argc != 2) {
+        shell_print(shell, "Incorrect number of arguments. Usage: %s <percentage>", argv[0]);
+        return -1;
+    }
 
+    int percentage = atoi(argv[1]);
+
+    white_dimmer(percentage);
+
+    return 0;
+}
+
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_white_dimmer,
+                               SHELL_CMD_ARG(set_dimmer, NULL, "Control white light intensity", cmd_white_dimmer, 2, 0),
+                               SHELL_SUBCMD_SET_END // Array terminated.
+);
+SHELL_CMD_REGISTER(dimmer, &sub_white_dimmer, "Commands to control white light intensity", NULL);
