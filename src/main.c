@@ -49,9 +49,16 @@ static struct led_rgb pixels[STRIP_NUM_PIXELS];
 
 static const struct device *const strip = DEVICE_DT_GET(STRIP_NODE);
 
-bool fire_rgb_on = false;
-bool rainbow = false;
-bool moving_rainbow = false;
+enum strip_state {
+    off,
+    on,
+    fire,
+    rainbow,
+    moving_rainbow
+};
+
+enum strip_state state = off;
+
 // Struct to represent a color in RGB format
 typedef struct {
     uint8_t r;
@@ -122,8 +129,16 @@ void led_controller(void *p1, void *p2, void *p3) {
     int rc;
 
     while (1) {
-        if (fire_rgb_on) {
+        if (state == off) {
+            memset(&pixels, 0x00, sizeof(pixels));
+            rc = led_strip_update_rgb(strip, pixels, STRIP_NUM_PIXELS);
+            if (rc) {
+                LOG_ERR("couldn't update strip: %d", rc);
+            }
+            k_sleep(K_MSEC(100));
+        } else if (state == fire) {
             for (size_t cursor = 0; cursor < ARRAY_SIZE(pixels); cursor++) {
+                if(state != fire){return;}
                 memset(&pixels, 0x00, sizeof(pixels));
                 memcpy(&pixels[cursor], &colors[color], sizeof(struct led_rgb));
 
@@ -136,9 +151,10 @@ void led_controller(void *p1, void *p2, void *p3) {
             }
 
             color = (color + 1) % ARRAY_SIZE(colors);
+            k_sleep(K_MSEC(100));
         }
-        if (rainbow){
-            fire_rgb_on = false;
+        else if (state == rainbow){
+
 
             // clear everything once before we set the colors
             memset(pixels, 0x00, sizeof(pixels));
@@ -147,7 +163,7 @@ void led_controller(void *p1, void *p2, void *p3) {
                 float hue = (float) cursor / STRIP_NUM_PIXELS;
 
                 // Calculate the color based on the hue
-                Color color = HSLtoRGB(hue, 1, 0.5);
+                Color color = HSLtoRGB(hue, 1, 0.2);
 
                 // Set the color
                 pixels[cursor].r = color.r;
@@ -160,10 +176,9 @@ void led_controller(void *p1, void *p2, void *p3) {
             if (rc) {
                 LOG_ERR("Couldn't update strip: %d", rc);
             }
-            rainbow = false;
-        }
-        if (moving_rainbow){
-            fire_rgb_on = false;
+            k_sleep(K_MSEC(100));
+        } else if (state == moving_rainbow){
+
 
             // Initialize offset outside loop where this block of code is.
             static size_t offset = 0;
@@ -196,9 +211,11 @@ void led_controller(void *p1, void *p2, void *p3) {
 
             // increment offset for next time to give the moving effect
             offset = (offset + 1) % STRIP_NUM_PIXELS;
+            k_sleep(K_MSEC(10));
+        } else {
+            k_sleep(K_MSEC(100));
         }
 
-        k_sleep(K_MSEC(100));
     }
 }
 
@@ -214,8 +231,7 @@ int main(void) {
         LOG_ERR("LED strip device %s is not ready", strip->name);
         return 0;
     }
-//    white_dimmer(1);
-//    rainbow = true;
+
     return 0;
 }
 
@@ -229,26 +245,43 @@ static int cmd_white_dimmer(const struct shell *shell, size_t argc, char **argv)
 
     int percentage = atoi(argv[1]);
 
+    state = on;
     white_dimmer(percentage);
 
     return 0;
 }
 
 static int cmd_toggle_fire(){
-    fire_rgb_on = !fire_rgb_on;
+    if (state != fire) {
+        state = fire;
+    } else {
+        state = off;
+    }
 }
 
 static int cmd_toggle_rainbow(){
-    rainbow = !rainbow;
+    if (state != rainbow) {
+        state = rainbow;
+    } else {
+        state = off;
+    }
 }
 
 static int cmd_toggle_moving_rainbow(){
-    moving_rainbow = !moving_rainbow;
+    if (state != moving_rainbow) {
+        state = moving_rainbow;
+    } else {
+        state = off;
+    }
 }
 
+static int cmd_off(){
+    state = off;
+}
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_white_dimmer,
                                SHELL_CMD_ARG(set_dimmer, NULL, "Control white light intensity", cmd_white_dimmer, 2, 0),
+                               SHELL_CMD(off, NULL, "Turn off", cmd_off),
                                SHELL_CMD(fire, NULL, "Toggle rgb firing", cmd_toggle_fire),
                                SHELL_CMD(rainbow, NULL, "Toggle rainbow", cmd_toggle_rainbow),
                                SHELL_CMD(move_rainbow, NULL, "Toggle moving rainbow", cmd_toggle_moving_rainbow),
