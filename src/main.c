@@ -6,10 +6,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <errno.h>
 #include <string.h>
+
 #define LOG_LEVEL 4
+
 #include <zephyr/logging/log.h>
+
 LOG_MODULE_REGISTER(main);
 
 #include <zephyr/kernel.h>
@@ -23,9 +25,16 @@ LOG_MODULE_REGISTER(main);
 #define STRIP_NODE        DT_NODELABEL(apa102)
 
 
-#define STRIP_NUM_PIXELS	51
+#define STRIP_NUM_PIXELS    51
 
-#define DELAY_TIME K_MSEC(100)
+/* size of stack area used by each thread */
+#define STACKSIZE 1024
+
+/* scheduling priority used by each thread */
+#define PRIORITY 7
+
+#define DELAY_TIME 100
+
 
 #define RGB(_r, _g, _b) { .r = (_r), .g = (_g), .b = (_b) }
 
@@ -67,43 +76,50 @@ void white_dimmer(int percentage) {
 
 }
 
+void led_controller(void *p1, void *p2, void *p3) {
+    size_t color = 0;
+    int rc;
 
-int main(void)
-{
+    while (1) {
+        if (fire_rgb_on) {
+            for (size_t cursor = 0; cursor < ARRAY_SIZE(pixels); cursor++) {
+                memset(&pixels, 0x00, sizeof(pixels));
+                memcpy(&pixels[cursor], &colors[color], sizeof(struct led_rgb));
+
+                rc = led_strip_update_rgb(strip, pixels, STRIP_NUM_PIXELS);
+                if (rc) {
+                    LOG_ERR("couldn't update strip: %d", rc);
+                }
+
+                k_sleep(K_MSEC(DELAY_TIME));
+            }
+
+            color = (color + 1) % ARRAY_SIZE(colors);
+        }
+        k_sleep(K_MSEC(100));
+    }
+}
+
+K_THREAD_DEFINE(my_controller_id, STACKSIZE,
+                led_controller, NULL, NULL, NULL,
+                PRIORITY, 0, 0);
+extern const k_tid_t my_controller_id;
+
+int main(void) {
     if (device_is_ready(strip)) {
         LOG_INF("Found LED strip device %s", strip->name);
     } else {
         LOG_ERR("LED strip device %s is not ready", strip->name);
         return 0;
     }
-    white_dimmer(50);
-    size_t color = 0;
-    int rc;
-//    while (1){
-//    // Main program loop
-//        if (fire_rgb_on) {
-//            for (size_t cursor = 0; cursor < ARRAY_SIZE(pixels); cursor++) {
-//                memset(&pixels, 0x00, sizeof(pixels));
-//                memcpy(&pixels[cursor], &colors[color], sizeof(struct led_rgb));
-//
-//                rc = led_strip_update_rgb(strip, pixels, STRIP_NUM_PIXELS);
-//                if (rc) {
-//                    LOG_ERR("couldn't update strip: %d", rc);
-//                }
-//
-//                k_sleep(DELAY_TIME);
-//            }
-//
-//            color = (color + 1) % ARRAY_SIZE(colors);
-//        }
-//    }
+    white_dimmer(1);
+
     return 0;
 }
 
 
 /* Shell commands */
-static int cmd_white_dimmer(const struct shell *shell, size_t argc, char **argv)
-{
+static int cmd_white_dimmer(const struct shell *shell, size_t argc, char **argv) {
     if (argc != 2) {
         shell_print(shell, "Incorrect number of arguments. Usage: %s <percentage>", argv[0]);
         return -1;
@@ -116,8 +132,13 @@ static int cmd_white_dimmer(const struct shell *shell, size_t argc, char **argv)
     return 0;
 }
 
+static int cmd_toggle_fire(){
+    fire_rgb_on = !fire_rgb_on;
+}
+
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_white_dimmer,
                                SHELL_CMD_ARG(set_dimmer, NULL, "Control white light intensity", cmd_white_dimmer, 2, 0),
+                               SHELL_CMD(fire, NULL, "Toggle rgb firing", cmd_toggle_fire),
                                SHELL_SUBCMD_SET_END // Array terminated.
 );
 SHELL_CMD_REGISTER(dimmer, &sub_white_dimmer, "Commands to control white light intensity", NULL);
