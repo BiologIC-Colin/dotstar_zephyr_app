@@ -20,6 +20,7 @@ LOG_MODULE_REGISTER(main);
 #include <zephyr/sys/util.h>
 #include <zephyr/shell/shell.h>
 #include <stdlib.h>
+#include <math.h>
 
 
 #define STRIP_NODE        DT_NODELABEL(apa102)
@@ -49,6 +50,45 @@ static struct led_rgb pixels[STRIP_NUM_PIXELS];
 static const struct device *const strip = DEVICE_DT_GET(STRIP_NODE);
 
 bool fire_rgb_on = false;
+bool rainbow = false;
+// Struct to represent a color in RGB format
+typedef struct {
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+} Color;
+
+float hueToRGB(float p, float q, float t) {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1.0/6) return p + (q - p) * 6 * t;
+    if (t < 1.0/2) return q;
+    if (t < 2.0/3) return p + (q - p) * (2.0/3 - t) * 6;
+    return p;
+}
+
+// Function for converting HSL values to an RGB color
+Color HSLtoRGB(float hue, float saturation, float lightness) {
+    float r, g, b;
+
+    if (saturation == 0)
+    {
+        r = g = b = lightness; // Achromatic color (gray scale)
+    }
+    else
+    {
+        float q = lightness < 0.5 ? lightness * (1 + saturation) : lightness + saturation - lightness * saturation;
+        float p = 2 * lightness - q;
+        r = hueToRGB(p, q, hue + 1.0/3);
+        g = hueToRGB(p, q, hue);
+        b = hueToRGB(p, q, hue - 1.0/3);
+    }
+
+    Color color = { r * 255, g * 255, b * 255 };
+    return color;
+}
+
+
 
 void white_dimmer(int percentage) {
     if (percentage <= 0 || percentage > 100) {
@@ -96,6 +136,32 @@ void led_controller(void *p1, void *p2, void *p3) {
 
             color = (color + 1) % ARRAY_SIZE(colors);
         }
+        if (rainbow){
+            fire_rgb_on = false;
+
+            // clear everything once before we set the colors
+            memset(pixels, 0x00, sizeof(pixels));
+
+            for (size_t cursor = 0; cursor < ARRAY_SIZE(pixels); cursor++) {
+                float hue = (float) cursor / STRIP_NUM_PIXELS;
+
+                // Calculate the color based on the hue
+                Color color = HSLtoRGB(hue, 1, 0.5);
+
+                // Set the color
+                pixels[cursor].r = color.r;
+                pixels[cursor].g = color.g;
+                pixels[cursor].b = color.b;
+            }
+
+            // Update the strip once after all colors are set
+            int rc = led_strip_update_rgb(strip, pixels, STRIP_NUM_PIXELS);
+            if (rc) {
+                LOG_ERR("Couldn't update strip: %d", rc);
+            }
+
+        }
+        rainbow = false;
         k_sleep(K_MSEC(100));
     }
 }
@@ -112,8 +178,8 @@ int main(void) {
         LOG_ERR("LED strip device %s is not ready", strip->name);
         return 0;
     }
-    white_dimmer(1);
-
+//    white_dimmer(1);
+    rainbow = true;
     return 0;
 }
 
