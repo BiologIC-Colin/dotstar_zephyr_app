@@ -26,7 +26,7 @@ LOG_MODULE_REGISTER(main);
 #define STRIP_NODE        DT_NODELABEL(apa102)
 
 
-#define STRIP_NUM_PIXELS    51
+#define STRIP_NUM_PIXELS    130
 
 /* size of stack area used by each thread */
 #define STACKSIZE 1024
@@ -51,6 +51,7 @@ static const struct device *const strip = DEVICE_DT_GET(STRIP_NODE);
 
 bool fire_rgb_on = false;
 bool rainbow = false;
+bool moving_rainbow = false;
 // Struct to represent a color in RGB format
 typedef struct {
     uint8_t r;
@@ -159,9 +160,44 @@ void led_controller(void *p1, void *p2, void *p3) {
             if (rc) {
                 LOG_ERR("Couldn't update strip: %d", rc);
             }
-
+            rainbow = false;
         }
-        rainbow = false;
+        if (moving_rainbow){
+            fire_rgb_on = false;
+
+            // Initialize offset outside loop where this block of code is.
+            static size_t offset = 0;
+
+            // clear everything once before we set the colors
+            memset(pixels, 0x00, sizeof(pixels));
+
+            for (size_t cursor = 0; cursor < ARRAY_SIZE(pixels); cursor++) {
+                float hue = (float) (cursor + offset) / STRIP_NUM_PIXELS;
+
+                // wrap hue back to 0 once it exceeds 1
+                if (hue > 1.0f) {
+                    hue -= 1.0f;
+                }
+
+                // Calculate the color based on the hue
+                Color color = HSLtoRGB(hue, 1, 0.5);
+
+                // Set the color
+                pixels[cursor].r = color.r;
+                pixels[cursor].g = color.g;
+                pixels[cursor].b = color.b;
+            }
+
+            // Update the strip after all colors are set
+            int rc = led_strip_update_rgb(strip, pixels, STRIP_NUM_PIXELS);
+            if (rc) {
+                LOG_ERR("Couldn't update strip: %d", rc);
+            }
+
+            // increment offset for next time to give the moving effect
+            offset = (offset + 1) % STRIP_NUM_PIXELS;
+        }
+
         k_sleep(K_MSEC(100));
     }
 }
@@ -179,7 +215,7 @@ int main(void) {
         return 0;
     }
 //    white_dimmer(1);
-    rainbow = true;
+//    rainbow = true;
     return 0;
 }
 
@@ -202,9 +238,20 @@ static int cmd_toggle_fire(){
     fire_rgb_on = !fire_rgb_on;
 }
 
+static int cmd_toggle_rainbow(){
+    rainbow = !rainbow;
+}
+
+static int cmd_toggle_moving_rainbow(){
+    moving_rainbow = !moving_rainbow;
+}
+
+
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_white_dimmer,
                                SHELL_CMD_ARG(set_dimmer, NULL, "Control white light intensity", cmd_white_dimmer, 2, 0),
                                SHELL_CMD(fire, NULL, "Toggle rgb firing", cmd_toggle_fire),
+                               SHELL_CMD(rainbow, NULL, "Toggle rainbow", cmd_toggle_rainbow),
+                               SHELL_CMD(move_rainbow, NULL, "Toggle moving rainbow", cmd_toggle_moving_rainbow),
                                SHELL_SUBCMD_SET_END // Array terminated.
 );
 SHELL_CMD_REGISTER(dimmer, &sub_white_dimmer, "Commands to control white light intensity", NULL);
